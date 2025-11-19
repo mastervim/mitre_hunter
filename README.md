@@ -14,7 +14,7 @@
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/mitre_hunter.git
+   git clone https://github.com/mastervim/mitre_hunter.git
    cd mitre_hunter
    ```
 
