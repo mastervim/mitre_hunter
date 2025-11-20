@@ -5,3 +5,6 @@ rich==14.2.0
 streamlit==1.51.0
 stix2==3.0.1
 PyYAML==6.0.2
+pysigma
+pysigma-backend-splunk
+pysigma-backend-crowdstrike
