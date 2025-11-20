@@ -2,6 +2,8 @@ import requests
 import pandas as pd
 import json
 import os
+import hashlib
+import warnings
 from stix2 import MemoryStore, Filter
 
 class MitreLoader:
@@ -26,6 +28,39 @@ class MitreLoader:
         with open(self.local_file, 'wb') as f:
             f.write(response.content)
         print("Download complete.")
+        
+        # Security: Verify data integrity
+        self._verify_data_integrity()
+    
+    def _verify_data_integrity(self):
+        """Verifies the integrity of downloaded data using SHA256.
+        
+        Note: This is a basic integrity check. For production use, consider
+        verifying against a known-good hash published by MITRE.
+        """
+        if not os.path.exists(self.local_file):
+            return
+        
+        sha256_hash = hashlib.sha256()
+        with open(self.local_file, 'rb') as f:
+            # Read in chunks to handle large files
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(byte_block)
+        
+        file_hash = sha256_hash.hexdigest()
+        file_size = os.path.getsize(self.local_file)
+        
+        print(f"[Security] Data integrity check:")
+        print(f"  SHA256: {file_hash}")
+        print(f"  Size: {file_size:,} bytes")
+        
+        # Warn if file seems suspiciously small (likely corrupted)
+        if file_size < 1000000:  # Less than 1MB
+            warnings.warn(
+                f"Downloaded file is suspiciously small ({file_size} bytes). "
+                "Data may be corrupted. Consider re-downloading with 'update' command.",
+                UserWarning
+            )
 
     def parse_data(self):
         """Parses the STIX data into a Pandas DataFrame."""

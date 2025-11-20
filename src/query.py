@@ -4,6 +4,9 @@ try:
 except ImportError:
     from loader import MitreLoader
 
+# Security: Limit query results to prevent DoS attacks
+MAX_RESULTS = 1000
+
 class MitreQuery:
     def __init__(self, df=None):
         self.loader = MitreLoader()
@@ -12,19 +15,37 @@ class MitreQuery:
         else:
             self.df = self.loader.parse_data()
 
-    def search_by_keyword(self, keyword):
-        """Searches for techniques containing the keyword in name or description."""
+    def search_by_keyword(self, keyword, max_results=MAX_RESULTS):
+        """Searches for techniques containing the keyword in name or description.
+        
+        Args:
+            keyword: Search term
+            max_results: Maximum number of results to return (default: 1000)
+        """
         keyword = keyword.lower()
         mask = self.df.apply(lambda x: keyword in x['name'].lower() or keyword in x['description'].lower(), axis=1)
-        return self.df[mask]
+        results = self.df[mask]
+        if len(results) > max_results:
+            print(f"[Security] Results truncated to {max_results} (found {len(results)})")
+            return results.head(max_results)
+        return results
 
-    def filter_by_datasource(self, datasource):
-        """Filters techniques by data source."""
+    def filter_by_datasource(self, datasource, max_results=MAX_RESULTS):
+        """Filters techniques by data source.
+        
+        Args:
+            datasource: Data source to filter by
+            max_results: Maximum number of results to return (default: 1000)
+        """
         datasource = datasource.lower()
         # Handle cases where data_sources might be None or empty
         # data_sources is a comma-separated string
         mask = self.df['data_sources'].apply(lambda x: datasource in x.lower() if isinstance(x, str) else False)
-        return self.df[mask]
+        results = self.df[mask]
+        if len(results) > max_results:
+            print(f"[Security] Results truncated to {max_results} (found {len(results)})")
+            return results.head(max_results)
+        return results
 
     def filter_by_tactic(self, tactic):
         """Filters techniques by tactic."""

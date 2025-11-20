@@ -45,7 +45,7 @@ def run_app():
 
 def main():
     print("="*50)
-    print("Welcome to MitreHunter v1.1.0")
+    print("Welcome to MitreHunter v1.2.0")
     print("="*50)
     print("This script will set up the environment and launch the tool.\n")
 
