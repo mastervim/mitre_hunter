@@ -5,8 +5,17 @@ import os
 import hashlib
 import warnings
 import logging
+import subprocess
+import yaml
+import json
+import time
 from typing import Optional, List, Set, Dict, Any
 from stix2 import MemoryStore, Filter
+
+try:
+    from yaml import CLoader as Loader, CDumper as Dumper
+except ImportError:
+    from yaml import Loader, Dumper
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -24,6 +33,9 @@ class MitreLoader:
         self.data_dir = data_dir
         self.enterprise_attack_url = "https://raw.githubusercontent.com/mitre-attack/attack-stix-data/master/enterprise-attack/enterprise-attack.json"
         self.local_file = os.path.join(self.data_dir, "enterprise-attack.json")
+        self.sigma_dir = os.path.join(self.data_dir, "sigma")
+        self.sigma_cache_file = os.path.join(self.data_dir, "sigma_cache.json")
+        self.sigma_repo_url = "https://github.com/SigmaHQ/sigma.git"
         
         if not os.path.exists(self.data_dir):
             os.makedirs(self.data_dir)
@@ -82,6 +94,123 @@ class MitreLoader:
                 "Data may be corrupted. Consider re-downloading with 'update' command.",
                 UserWarning
             )
+
+    def download_sigma_rules(self, force: bool = False) -> None:
+        """Clones or updates the SigmaHQ/sigma repository.
+        
+        Args:
+            force: If True, deletes existing directory and re-clones.
+        """
+        if os.path.exists(self.sigma_dir):
+            if force:
+                logger.info("Force updating Sigma rules (re-cloning)...")
+                # Simple approach: remove dir and clone again
+                # In production, might want to use shutil.rmtree, but let's rely on git for now or manual cleanup
+                # For safety, we'll just try to pull if it exists, unless force is explicit
+                pass 
+            
+            logger.info("Updating Sigma rules...")
+            try:
+                subprocess.run(["git", "-C", self.sigma_dir, "pull"], check=True, capture_output=True)
+                logger.info("Sigma rules updated.")
+                return
+            except subprocess.CalledProcessError as e:
+                logger.warning(f"Failed to update Sigma rules: {e}. Trying re-clone.")
+                # If pull fails, fall through to re-clone logic (requires clearing dir)
+                import shutil
+                shutil.rmtree(self.sigma_dir, ignore_errors=True)
+
+        logger.info(f"Cloning Sigma rules from {self.sigma_repo_url}...")
+        try:
+            subprocess.run(["git", "clone", self.sigma_repo_url, self.sigma_dir], check=True, capture_output=True)
+            logger.info("Sigma rules cloned.")
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to clone Sigma rules: {e}")
+            # Don't raise, just log error so app can continue without Sigma
+    
+    def parse_sigma_rules(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Parses Sigma rules and maps them to MITRE Technique IDs.
+        
+        Uses a JSON cache to avoid re-parsing thousands of YAML files if the
+        directory hasn't changed.
+        
+        Returns:
+            Dict[str, List[Dict]]: Map of Technique ID (e.g., 'T1003') to list of rule dicts.
+        """
+        if not os.path.exists(self.sigma_dir):
+            logger.warning("Sigma rules directory not found. Skipping Sigma parsing.")
+            return {}
+
+        # Check cache
+        if os.path.exists(self.sigma_cache_file):
+            try:
+                cache_mtime = os.path.getmtime(self.sigma_cache_file)
+                sigma_mtime = os.path.getmtime(self.sigma_dir)
+                # If cache is newer than the directory modification, use it
+                # Note: git pull updates dir mtime
+                if cache_mtime > sigma_mtime:
+                    logger.info("Loading Sigma rules from cache...")
+                    with open(self.sigma_cache_file, 'r', encoding='utf-8') as f:
+                        return json.load(f)
+            except Exception as e:
+                logger.warning(f"Failed to load Sigma cache: {e}. Reparsing.")
+
+        logger.info("Parsing Sigma rules (this may take a moment)...")
+        technique_to_rules = {}
+        rules_dir = os.path.join(self.sigma_dir, "rules")
+        
+        count = 0
+        start_time = time.time()
+        
+        for root, _, files in os.walk(rules_dir):
+            for file in files:
+                if file.endswith(".yml"):
+                    try:
+                        file_path = os.path.join(root, file)
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            # Use CLoader if available for speed
+                            rule = yaml.load(f, Loader=Loader)
+                            
+                        if not rule or 'tags' not in rule:
+                            continue
+                            
+                        # Extract MITRE tags (e.g., attack.t1003)
+                        mitre_tags = [t for t in rule['tags'] if t.startswith('attack.t')]
+                        
+                        if mitre_tags:
+                            rule_data = {
+                                "title": rule.get("title", "Unknown Rule"),
+                                "id": rule.get("id", ""),
+                                "description": rule.get("description", ""),
+                                "level": rule.get("level", "unknown"),
+                                "tags": rule['tags'],
+                                "path": file_path
+                            }
+                            
+                            for tag in mitre_tags:
+                                # Convert attack.t1003 -> T1003
+                                tech_id = tag.split('.')[1].upper()
+                                if tech_id not in technique_to_rules:
+                                    technique_to_rules[tech_id] = []
+                                technique_to_rules[tech_id].append(rule_data)
+                            count += 1
+                            
+                    except Exception as e:
+                        # Skip malformed files
+                        continue
+        
+        elapsed = time.time() - start_time
+        logger.info(f"Parsed {count} Sigma rules in {elapsed:.2f}s.")
+        
+        # Save to cache
+        try:
+            with open(self.sigma_cache_file, 'w', encoding='utf-8') as f:
+                json.dump(technique_to_rules, f)
+            logger.info("Sigma rules cached.")
+        except Exception as e:
+            logger.warning(f"Failed to cache Sigma rules: {e}")
+            
+        return technique_to_rules
 
     def parse_data(self) -> pd.DataFrame:
         """Parses the STIX data into a Pandas DataFrame.

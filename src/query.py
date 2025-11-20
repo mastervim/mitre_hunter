@@ -10,17 +10,21 @@ MAX_RESULTS = 1000
 
 class MitreQuery:
     """Handles querying and filtering of MITRE ATT&CK data."""
-    def __init__(self, df: Optional[pd.DataFrame] = None):
+    def __init__(self, df: Optional[pd.DataFrame] = None, sigma_rules: Optional[Dict[str, List[Dict[str, Any]]]] = None):
         """Initialize the query engine.
         
         Args:
             df: Optional pre-loaded DataFrame. If None, loads data using MitreLoader.
+            sigma_rules: Optional pre-loaded Sigma rules.
         """
         self.loader = MitreLoader()
         if df is not None:
             self.df = df
         else:
             self.df = self.loader.parse_data()
+            
+        # Use provided rules or empty dict (lazy load or explicit load required)
+        self.sigma_rules = sigma_rules if sigma_rules is not None else {}
 
     def search_by_keyword(self, keyword: str, max_results: int = MAX_RESULTS) -> pd.DataFrame:
         """Searches for techniques containing the keyword in name or description.
@@ -125,7 +129,25 @@ class MitreQuery:
         result = self.df[self.df['external_id'] == technique_id]
         if result.empty:
             return None
-        return result.iloc[0].to_dict()
+        
+        details = result.iloc[0].to_dict()
+        # Add Sigma rules count to details
+        sigma_rules = self.get_sigma_rules_for_technique(technique_id)
+        details['sigma_rules_count'] = len(sigma_rules)
+        return details
+
+    def get_sigma_rules_for_technique(self, technique_id: str) -> List[Dict[str, Any]]:
+        """Gets Sigma rules associated with a technique ID.
+        
+        Args:
+            technique_id: The external ID of the technique (e.g., T1003).
+            
+        Returns:
+            List[Dict[str, Any]]: List of Sigma rules.
+        """
+        # Normalize ID (T1003.001 -> T1003 if needed, but Sigma usually tags specific techniques)
+        # Sigma tags are usually lower case attack.t1003, but our parser converts to T1003
+        return self.sigma_rules.get(technique_id, [])
 
     def get_all_datasources(self) -> List[str]:
         """Returns a list of all unique data sources.

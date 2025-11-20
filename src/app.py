@@ -17,36 +17,34 @@ def load_data():
     loader = MitreLoader()
     return loader.parse_data()
 
+@st.cache_data
+def load_sigma_rules():
+    loader = MitreLoader()
+    # This now uses the JSON cache internally, so it's fast
+    return loader.parse_sigma_rules()
+
 def main():
     st.title("🛡️ MitreHunter: Threat Hunting Tool")
     st.markdown("Query MITRE ATT&CK TTPs based on Data Sources for effective threat hunting.")
 
     try:
-        # Delayed loading prompt logic
-        def show_slow_loading_message():
-            time.sleep(3)
-            if not st.session_state.get('data_loaded', False):
-                try:
-                    st.toast("Data is taking a moment to load... hang tight! 🐢", icon="⏳")
-                except:
-                    pass # Handle potential context issues gracefully
-
+        # Enterprise-grade loading status
         if 'data_loaded' not in st.session_state:
             st.session_state.data_loaded = False
 
-        # Start the timer thread
-        t = threading.Thread(target=show_slow_loading_message)
-        add_script_run_ctx(t)
-        t.start()
-
-        with st.spinner("Loading MITRE ATT&CK Data..."):
-            df = load_data()
-            st.session_state.data_loaded = True
+        with st.status("Initializing MitreHunter...", expanded=not st.session_state.data_loaded) as status:
             
-        query = MitreQuery(df)
-        # Force reload of df in query object to ensure it uses cached data properly if needed, 
-        # though MitreQuery loads it internally. 
-        # Optimization: Pass df to MitreQuery if we refactor, but for now it's fine.
+            st.write("Loading MITRE ATT&CK Data...")
+            df = load_data()
+            
+            st.write("Loading Sigma Rules (Cached)...")
+            sigma_rules = load_sigma_rules()
+            
+            st.write("Building Query Engine...")
+            query = MitreQuery(df, sigma_rules)
+            
+            st.session_state.data_loaded = True
+            status.update(label="System Ready", state="complete", expanded=False)
         
     except Exception as e:
         st.error(f"Error loading data: {e}")
@@ -68,6 +66,9 @@ def main():
 
     # Search
     search_term = st.sidebar.text_input("Search by Keyword")
+    
+    # Sigma Filter
+    show_sigma_only = st.sidebar.checkbox("Show only techniques with Sigma Rules")
 
     # Apply filters
     filtered_df = df.copy()
@@ -95,14 +96,30 @@ def main():
         keyword = search_term.lower()
         mask = filtered_df.apply(lambda x: keyword in x['name'].lower() or keyword in x['description'].lower(), axis=1)
         filtered_df = filtered_df[mask]
+        
+    if show_sigma_only:
+        sigma_ids = set(query.sigma_rules.keys())
+        # Filter for IDs that are in the sigma_rules dict
+        mask = filtered_df['external_id'].isin(sigma_ids)
+        filtered_df = filtered_df[mask]
 
     # Display results
     st.subheader(f"Found {len(filtered_df)} Techniques")
 
     if not filtered_df.empty:
+        # Add Sigma count column for display
+        # We use a lambda to look up the count from the query object
+        filtered_df['sigma_count'] = filtered_df['external_id'].apply(lambda x: len(query.get_sigma_rules_for_technique(x)))
+        
         # Display as a dataframe with specific columns
-        display_df = filtered_df[['external_id', 'name', 'tactics', 'data_sources', 'platforms', 'threat_actors']]
-        st.dataframe(display_df, width='stretch')
+        display_df = filtered_df[['external_id', 'name', 'sigma_count', 'tactics', 'data_sources', 'platforms', 'threat_actors']]
+        
+        # Rename columns for nicer display
+        st.dataframe(
+            display_df.rename(columns={"sigma_count": "Sigma Rules"}), 
+            width=None, 
+            use_container_width=True
+        )
 
         # Detailed view
         st.markdown("---")
@@ -125,6 +142,17 @@ def main():
                 
                 st.markdown("### Description")
                 st.markdown(details['description'])
+                
+                # Sigma Rules Section
+                sigma_rules = query.get_sigma_rules_for_technique(selected_id)
+                if sigma_rules:
+                    st.markdown(f"### Sigma Rules ({len(sigma_rules)})")
+                    for rule in sigma_rules:
+                        with st.expander(f"{rule['title']} ({rule['level']})"):
+                            st.markdown(f"**Description:** {rule['description']}")
+                            st.code(open(rule['path'], 'r', encoding='utf-8').read(), language='yaml')
+                else:
+                    st.info("No Sigma rules found for this technique.")
 
 if __name__ == "__main__":
     main()
