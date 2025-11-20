@@ -4,10 +4,23 @@ import json
 import os
 import hashlib
 import warnings
+import logging
+from typing import Optional, List, Set, Dict, Any
 from stix2 import MemoryStore, Filter
 
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
 class MitreLoader:
-    def __init__(self, data_dir="data"):
+    """Handles downloading and parsing of MITRE ATT&CK STIX data."""
+    
+    def __init__(self, data_dir: str = "data"):
+        """Initialize the loader.
+        
+        Args:
+            data_dir: Directory to store cached STIX data.
+        """
         self.data_dir = data_dir
         self.enterprise_attack_url = "https://raw.githubusercontent.com/mitre-attack/attack-stix-data/master/enterprise-attack/enterprise-attack.json"
         self.local_file = os.path.join(self.data_dir, "enterprise-attack.json")
@@ -15,19 +28,27 @@ class MitreLoader:
         if not os.path.exists(self.data_dir):
             os.makedirs(self.data_dir)
 
-    def download_data(self, force=False):
-        """Downloads the latest enterprise-attack.json if not present or forced."""
+    def download_data(self, force: bool = False) -> None:
+        """Downloads the latest enterprise-attack.json if not present or forced.
+        
+        Args:
+            force: If True, force re-download even if file exists.
+        """
         if os.path.exists(self.local_file) and not force:
-            print(f"Using cached data from {self.local_file}")
+            logger.info(f"Using cached data from {self.local_file}")
             return
 
-        print(f"Downloading data from {self.enterprise_attack_url}...")
-        response = requests.get(self.enterprise_attack_url)
-        response.raise_for_status()
-        
-        with open(self.local_file, 'wb') as f:
-            f.write(response.content)
-        print("Download complete.")
+        logger.info(f"Downloading data from {self.enterprise_attack_url}...")
+        try:
+            response = requests.get(self.enterprise_attack_url)
+            response.raise_for_status()
+            
+            with open(self.local_file, 'wb') as f:
+                f.write(response.content)
+            logger.info("Download complete.")
+        except requests.RequestException as e:
+            logger.error(f"Failed to download data: {e}")
+            raise
         
         # Security: Verify data integrity
         self._verify_data_integrity()
@@ -62,12 +83,16 @@ class MitreLoader:
                 UserWarning
             )
 
-    def parse_data(self):
-        """Parses the STIX data into a Pandas DataFrame."""
+    def parse_data(self) -> pd.DataFrame:
+        """Parses the STIX data into a Pandas DataFrame.
+        
+        Returns:
+            pd.DataFrame: DataFrame containing technique data.
+        """
         if not os.path.exists(self.local_file):
             self.download_data()
 
-        print("Loading STIX data...")
+        logger.info("Loading STIX data...")
         mem = MemoryStore()
         mem.load_from_file(self.local_file)
 
