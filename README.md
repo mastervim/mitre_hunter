@@ -10,20 +10,22 @@
 - **Live Data**: Fetches the latest enterprise-attack.json directly from MITRE's GitHub.
 - **v18 Support**: Fully compatible with MITRE ATT&CK v18 data model (Log Sources on Analytics).
 
-## Installation
+## Quick Start
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/yourusername/mitre_hunter.git
-   cd mitre_hunter
-   ```
+1.  **Clone & Enter**:
+    ```bash
+    git clone https://github.com/yourusername/mitre_hunter.git
+    cd mitre_hunter
+    ```
 
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+2.  **Run**:
+    ```bash
+    python run.py
+    ```
+    *This script will automatically check for dependencies, install them if missing, and launch the tool.*
 
-## Usage
+## Manual Installation
+If you prefer to install manually:
 
 ### CLI
 

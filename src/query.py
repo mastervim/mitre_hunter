@@ -5,9 +5,12 @@ except ImportError:
     from loader import MitreLoader
 
 class MitreQuery:
-    def __init__(self):
+    def __init__(self, df=None):
         self.loader = MitreLoader()
-        self.df = self.loader.parse_data()
+        if df is not None:
+            self.df = df
+        else:
+            self.df = self.loader.parse_data()
 
     def search_by_keyword(self, keyword):
         """Searches for techniques containing the keyword in name or description."""

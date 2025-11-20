@@ -1,7 +1,14 @@
 import streamlit as st
 import pandas as pd
-from loader import MitreLoader
-from query import MitreQuery
+import time
+import threading
+from streamlit.runtime.scriptrunner import add_script_run_ctx
+try:
+    from .loader import MitreLoader
+    from .query import MitreQuery
+except ImportError:
+    from loader import MitreLoader
+    from query import MitreQuery
 
 st.set_page_config(page_title="MitreHunter", page_icon="🛡️", layout="wide")
 
@@ -15,9 +22,28 @@ def main():
     st.markdown("Query MITRE ATT&CK TTPs based on Data Sources for effective threat hunting.")
 
     try:
+        # Delayed loading prompt logic
+        def show_slow_loading_message():
+            time.sleep(3)
+            if not st.session_state.get('data_loaded', False):
+                try:
+                    st.toast("Data is taking a moment to load... hang tight! 🐢", icon="⏳")
+                except:
+                    pass # Handle potential context issues gracefully
+
+        if 'data_loaded' not in st.session_state:
+            st.session_state.data_loaded = False
+
+        # Start the timer thread
+        t = threading.Thread(target=show_slow_loading_message)
+        add_script_run_ctx(t)
+        t.start()
+
         with st.spinner("Loading MITRE ATT&CK Data..."):
             df = load_data()
-        query = MitreQuery()
+            st.session_state.data_loaded = True
+            
+        query = MitreQuery(df)
         # Force reload of df in query object to ensure it uses cached data properly if needed, 
         # though MitreQuery loads it internally. 
         # Optimization: Pass df to MitreQuery if we refactor, but for now it's fine.

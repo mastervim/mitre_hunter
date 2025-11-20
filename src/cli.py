@@ -56,29 +56,33 @@ def main():
     args = parser.parse_args()
 
     if args.command == "update":
-        console.print("[bold green]Updating MITRE ATT&CK data...[/bold green]")
-        query = MitreQuery()
-        query.loader.download_data(force=True)
-        query.loader.parse_data()
+        with console.status("[bold green]Updating MITRE ATT&CK data...[/bold green]", spinner="dots"):
+            query = MitreQuery()
+            query.loader.download_data(force=True)
+            query.loader.parse_data()
         console.print("[bold green]Update complete.[/bold green]")
 
     elif args.command == "search":
-        query = MitreQuery()
+        with console.status("[bold green]Loading data...[/bold green]", spinner="dots"):
+            query = MitreQuery()
         results = query.search_by_keyword(args.keyword)
         print_techniques(results, f"Search Results for '{args.keyword}'")
 
     elif args.command == "hunt":
-        query = MitreQuery()
+        with console.status("[bold green]Loading data...[/bold green]", spinner="dots"):
+            query = MitreQuery()
         results = query.filter_by_datasource(args.datasource)
         print_techniques(results, f"Techniques for Data Source: '{args.datasource}'")
 
     elif args.command == "actor":
-        query = MitreQuery()
+        with console.status("[bold green]Loading data...[/bold green]", spinner="dots"):
+            query = MitreQuery()
         results = query.filter_by_threat_actor(args.name)
         print_techniques(results, f"Techniques for Threat Actor: '{args.name}'")
 
     elif args.command == "info":
-        query = MitreQuery()
+        with console.status("[bold green]Loading data...[/bold green]", spinner="dots"):
+            query = MitreQuery()
         details = query.get_technique_details(args.id)
         if details:
             console.print(f"[bold cyan]ID:[/bold cyan] {details['external_id']}")
@@ -94,7 +98,8 @@ def main():
             console.print(f"[red]Technique {args.id} not found.[/red]")
 
     elif args.command == "datasources":
-        query = MitreQuery()
+        with console.status("[bold green]Loading data...[/bold green]", spinner="dots"):
+            query = MitreQuery()
         datasources = query.get_all_datasources()
         console.print(f"[bold]Available Data Sources ({len(datasources)}):[/bold]")
         for ds in datasources:
