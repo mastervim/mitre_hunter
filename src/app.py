@@ -81,7 +81,7 @@ def main():
     search_term = st.sidebar.text_input("Search by Keyword")
     
     # Sigma Filter
-    show_sigma_only = st.sidebar.checkbox("Show only techniques with Sigma Rules")
+    show_sigma_only = st.sidebar.checkbox("Show only techniques with Detections (Sigma/Splunk/CS)")
 
     # Apply filters
     filtered_df = df.copy()
@@ -126,7 +126,7 @@ def main():
         
         # Display as a dataframe with specific columns
         display_df = filtered_df[['external_id', 'name', 'sigma_count', 'tactics', 'data_sources', 'platforms', 'threat_actors']]
-        display_df = display_df.rename(columns={"sigma_count": "Sigma Rules"})
+        display_df = display_df.rename(columns={"sigma_count": "Detections"})
         
         # Interactive Table
         st.info("👆 Click on a row to view details")
@@ -138,81 +138,83 @@ def main():
             selection_mode="multi-row"
         )
         
-        # Bulk Export Logic
+        # Export Logic
         st.sidebar.markdown("---")
-        st.sidebar.subheader("Bulk Export")
+        st.sidebar.subheader("Export Artifacts")
         
-        # Determine export set
         selected_indices = event.selection.rows
-        if selected_indices:
-            export_label = f"Export {len(selected_indices)} Selected Techniques"
-            # Filter filtered_df by selected indices
-            # Note: display_df indices match filtered_df indices because display_df was created from filtered_df
-            # However, if filtered_df has a non-standard index, we need to be careful.
-            # st.dataframe selection returns integer indices (0-based position in the displayed data).
-            export_df_source = filtered_df.iloc[selected_indices]
+        
+        if not selected_indices:
+            st.sidebar.info("Select techniques in the table to enable export.")
         else:
-            export_label = f"Export All {len(filtered_df)} Filtered Techniques"
-            export_df_source = filtered_df
-
-        if st.sidebar.button(export_label):
-            with st.status("Generating Export...", expanded=True) as status:
-                all_export_data = []
-                progress_bar = status.progress(0)
-                total_rows = len(export_df_source)
-                
-                for idx, (index, row) in enumerate(export_df_source.iterrows()):
-                    tech_id = row['external_id']
-                    tech_name = row['name']
+            st.sidebar.write(f"**{len(selected_indices)} techniques selected**")
+            
+            if st.sidebar.button("⚡ Generate Export Artifacts"):
+                with st.status("Generating Artifacts...", expanded=True) as status:
+                    export_df_source = filtered_df.iloc[selected_indices]
+                    all_export_data = []
+                    progress_bar = status.progress(0)
+                    total_rows = len(export_df_source)
                     
-                    # Get rules
-                    rules = query.get_sigma_rules_for_technique(tech_id)
-                    if rules:
-                        for rule in rules:
-                            # Read raw YAML
-                            try:
-                                with open(rule['path'], 'r', encoding='utf-8') as f:
-                                    raw_yaml = f.read()
-                            except:
-                                raw_yaml = ""
-                            
-                            # Convert
-                            queries = converter.convert_to_all(raw_yaml)
-                            
-                            all_export_data.append({
-                                "TechniqueID": tech_id,
-                                "TechniqueName": tech_name,
-                                "RuleTitle": rule['title'],
-                                "RuleLevel": rule['level'],
-                                "SplunkQuery": queries['splunk'],
-                                "CrowdStrikeQuery": queries['crowdstrike']
-                            })
+                    for idx, (index, row) in enumerate(export_df_source.iterrows()):
+                        tech_id = row['external_id']
+                        tech_name = row['name']
+                        
+                        rules = query.get_sigma_rules_for_technique(tech_id)
+                        if rules:
+                            for rule in rules:
+                                try:
+                                    with open(rule['path'], 'r', encoding='utf-8') as f:
+                                        raw_yaml = f.read()
+                                except:
+                                    raw_yaml = ""
+                                
+                                queries = converter.convert_to_all(raw_yaml)
+                                
+                                all_export_data.append({
+                                    "TechniqueID": tech_id,
+                                    "TechniqueName": tech_name,
+                                    "RuleTitle": rule['title'],
+                                    "RuleLevel": rule['level'],
+                                    "SplunkQuery": queries['splunk'],
+                                    "CrowdStrikeQuery": queries['crowdstrike']
+                                })
+                        
+                        progress_bar.progress((idx + 1) / total_rows)
                     
-                    # Update progress
-                    progress_bar.progress((idx + 1) / total_rows)
-                
-                # Create DataFrame
-                export_df = pd.DataFrame(all_export_data)
-                csv_data = export_df.to_csv(index=False).encode('utf-8')
-                
-                status.update(label="Export Ready!", state="complete", expanded=False)
-                
-                st.sidebar.download_button(
-                    label="📥 Download CSV",
-                    data=csv_data,
-                    file_name="mitre_hunter_export.csv",
-                    mime="text/csv"
-                )
+                    # Prepare downloads
+                    export_df = pd.DataFrame(all_export_data)
+                    
+                    # CSV
+                    csv_data = export_df.to_csv(index=False).encode('utf-8')
+                    
+                    # JSON
+                    json_str = json.dumps(all_export_data, indent=2)
+                    
+                    # YAML
+                    yaml_str = yaml.dump(all_export_data, sort_keys=False)
+                    
+                    status.update(label="Artifacts Ready!", state="complete", expanded=False)
+                    
+                    st.sidebar.markdown("### Download")
+                    st.sidebar.download_button("📥 Download CSV", csv_data, "mitre_hunter_export.csv", "text/csv")
+                    st.sidebar.download_button("📥 Download JSON", json_str, "mitre_hunter_export.json", "application/json")
+                    st.sidebar.download_button("📥 Download YAML", yaml_str, "mitre_hunter_export.yaml", "application/x-yaml")
 
         # Detailed view selection logic
         selected_id = None
+        
         if len(selected_indices) > 0:
-            # Show details for the LAST selected row (most recently clicked usually, or just last in list)
-            last_selected_index = selected_indices[-1]
-            selected_id = display_df.iloc[last_selected_index]['external_id']
+            st.markdown("---")
+            
+            # Get selected rows
+            selected_rows = display_df.iloc[selected_indices]
+            options = selected_rows['external_id'].tolist()
+            
+            # Dropdown
+            selected_id = st.selectbox("Select Technique to View Details", options=options)
         
         if selected_id:
-            st.markdown("---")
             st.subheader(f"Technique Details: {selected_id}")
             details = query.get_technique_details(selected_id)
             if details:
@@ -233,7 +235,7 @@ def main():
                 # Sigma Rules Section
                 sigma_rules = query.get_sigma_rules_for_technique(selected_id)
                 if sigma_rules:
-                    st.markdown(f"### Sigma Rules ({len(sigma_rules)})")
+                    st.markdown(f"### Detection Queries ({len(sigma_rules)})")
                     
                     # Prepare export data
                     export_data = []
@@ -261,7 +263,7 @@ def main():
                             })
                             
                             # Display Tabs
-                            tab1, tab2, tab3 = st.tabs(["Source (YAML)", "Splunk", "CrowdStrike"])
+                            tab1, tab2, tab3 = st.tabs(["Sigma Rule", "Splunk", "CrowdStrike"])
                             
                             with tab1:
                                 st.code(raw_yaml, language='yaml')
@@ -270,38 +272,7 @@ def main():
                             with tab3:
                                 st.code(queries['crowdstrike'], language='text')
                     
-                    # Export Section
-                    st.markdown("### Export Queries")
-                    col_dl1, col_dl2, col_dl3 = st.columns(3)
-                    
-                    # JSON Export
-                    json_str = json.dumps(export_data, indent=2)
-                    col_dl1.download_button(
-                        label="Download JSON",
-                        data=json_str,
-                        file_name=f"{selected_id}_sigma_queries.json",
-                        mime="application/json"
-                    )
-                    
-                    # CSV Export
-                    csv_buffer = io.StringIO()
-                    csv_df = pd.DataFrame(export_data)
-                    csv_df.to_csv(csv_buffer, index=False)
-                    col_dl2.download_button(
-                        label="Download CSV",
-                        data=csv_buffer.getvalue(),
-                        file_name=f"{selected_id}_sigma_queries.csv",
-                        mime="text/csv"
-                    )
-                    
-                    # YAML Export
-                    yaml_str = yaml.dump(export_data, sort_keys=False)
-                    col_dl3.download_button(
-                        label="Download YAML",
-                        data=yaml_str,
-                        file_name=f"{selected_id}_sigma_queries.yaml",
-                        mime="application/x-yaml"
-                    )
+
                     
                 else:
                     st.info("No Sigma rules found for this technique.")

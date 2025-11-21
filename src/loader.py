@@ -31,14 +31,23 @@ class MitreLoader:
             data_dir: Directory to store cached STIX data.
         """
         self.data_dir = data_dir
+        # Ensure absolute path to avoid CWD confusion
+        if not os.path.isabs(self.data_dir):
+            self.data_dir = os.path.abspath(self.data_dir)
+            
         self.enterprise_attack_url = "https://raw.githubusercontent.com/mitre-attack/attack-stix-data/master/enterprise-attack/enterprise-attack.json"
         self.local_file = os.path.join(self.data_dir, "enterprise-attack.json")
         self.sigma_dir = os.path.join(self.data_dir, "sigma")
         self.sigma_cache_file = os.path.join(self.data_dir, "sigma_cache.json")
         self.sigma_repo_url = "https://github.com/SigmaHQ/sigma.git"
         
-        if not os.path.exists(self.data_dir):
-            os.makedirs(self.data_dir)
+        try:
+            os.makedirs(self.data_dir, exist_ok=True)
+        except Exception as e:
+            logger.error(f"Failed to create data directory {self.data_dir}: {e}")
+            # We might continue if it exists but we just couldn't 'create' it
+            if not os.path.exists(self.data_dir):
+                raise
 
     def download_data(self, force: bool = False) -> None:
         """Downloads the latest enterprise-attack.json if not present or forced.
