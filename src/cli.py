@@ -5,10 +5,13 @@ from rich.table import Table
 from rich.markdown import Markdown
 try:
     from .loader import MitreLoader
+    from .loader import MitreLoader
     from .query import MitreQuery
+    from . import __version__
 except ImportError:
     from loader import MitreLoader
     from query import MitreQuery
+    __version__ = "1.3.0"
 import json
 import yaml
 import csv
@@ -36,7 +39,7 @@ def print_techniques(techniques, title="Techniques"):
     console.print(table)
 
 def main():
-    parser = argparse.ArgumentParser(description="MitreHunter: Query MITRE ATT&CK TTPs")
+    parser = argparse.ArgumentParser(description=f"MitreHunter v{__version__}: Query MITRE ATT&CK TTPs")
     subparsers = parser.add_subparsers(dest="command", help="Command to execute")
 
     # Update command

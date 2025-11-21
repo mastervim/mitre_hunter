@@ -6,16 +6,21 @@ from streamlit.runtime.scriptrunner import add_script_run_ctx
 try:
     from .loader import MitreLoader
     from .query import MitreQuery
+    from .loader import MitreLoader
+    from .query import MitreQuery
     from .converter import SigmaConverter
+    from . import __version__
 except ImportError:
     from loader import MitreLoader
     from query import MitreQuery
     from converter import SigmaConverter
+    # Fallback if package import fails (e.g. running script directly)
+    __version__ = "1.3.0"
 import json
 import io
 import yaml
 
-st.set_page_config(page_title="MitreHunter", page_icon="🛡️", layout="wide")
+st.set_page_config(page_title=f"MitreHunter v{__version__} | Enterprise Threat Hunting", page_icon="🛡️", layout="wide")
 
 @st.cache_data
 def load_data():
@@ -29,7 +34,7 @@ def load_sigma_rules():
     return loader.parse_sigma_rules()
 
 def main():
-    st.title("🛡️ MitreHunter: Threat Hunting Tool")
+    st.title(f"🛡️ MitreHunter v{__version__}: Threat Hunting Tool")
     st.markdown("Query MITRE ATT&CK TTPs based on Data Sources for effective threat hunting.")
 
     try:
@@ -130,19 +135,33 @@ def main():
             width=None, 
             use_container_width=True,
             on_select="rerun",
-            selection_mode="single-row"
+            selection_mode="multi-row"
         )
         
         # Bulk Export Logic
         st.sidebar.markdown("---")
         st.sidebar.subheader("Bulk Export")
-        if st.sidebar.button("Export All Filtered Rules"):
-            with st.status("Generating Bulk Export...", expanded=True) as status:
+        
+        # Determine export set
+        selected_indices = event.selection.rows
+        if selected_indices:
+            export_label = f"Export {len(selected_indices)} Selected Techniques"
+            # Filter filtered_df by selected indices
+            # Note: display_df indices match filtered_df indices because display_df was created from filtered_df
+            # However, if filtered_df has a non-standard index, we need to be careful.
+            # st.dataframe selection returns integer indices (0-based position in the displayed data).
+            export_df_source = filtered_df.iloc[selected_indices]
+        else:
+            export_label = f"Export All {len(filtered_df)} Filtered Techniques"
+            export_df_source = filtered_df
+
+        if st.sidebar.button(export_label):
+            with st.status("Generating Export...", expanded=True) as status:
                 all_export_data = []
-                total_techniques = len(filtered_df)
                 progress_bar = status.progress(0)
+                total_rows = len(export_df_source)
                 
-                for idx, row in filtered_df.iterrows():
+                for idx, (index, row) in enumerate(export_df_source.iterrows()):
                     tech_id = row['external_id']
                     tech_name = row['name']
                     
@@ -170,10 +189,7 @@ def main():
                             })
                     
                     # Update progress
-                    # idx is not 0-based index of iteration, so we use manual counter or enumerate if we changed loop
-                    # But filtered_df index might be non-sequential. Let's just use a simple calculation.
-                    # Actually, let's just use a counter.
-                    pass 
+                    progress_bar.progress((idx + 1) / total_rows)
                 
                 # Create DataFrame
                 export_df = pd.DataFrame(all_export_data)
@@ -182,18 +198,18 @@ def main():
                 status.update(label="Export Ready!", state="complete", expanded=False)
                 
                 st.sidebar.download_button(
-                    label="📥 Download Master CSV",
+                    label="📥 Download CSV",
                     data=csv_data,
-                    file_name="mitre_hunter_bulk_export.csv",
+                    file_name="mitre_hunter_export.csv",
                     mime="text/csv"
                 )
 
         # Detailed view selection logic
         selected_id = None
-        if len(event.selection.rows) > 0:
-            selected_index = event.selection.rows[0]
-            # Get the ID from the displayed dataframe (which matches filtered_df order)
-            selected_id = display_df.iloc[selected_index]['external_id']
+        if len(selected_indices) > 0:
+            # Show details for the LAST selected row (most recently clicked usually, or just last in list)
+            last_selected_index = selected_indices[-1]
+            selected_id = display_df.iloc[last_selected_index]['external_id']
         
         if selected_id:
             st.markdown("---")

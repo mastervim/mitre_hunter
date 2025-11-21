@@ -45,7 +45,11 @@ def run_app():
 
 def main():
     print("="*50)
-    print("Welcome to MitreHunter v1.2.0")
+    try:
+        from src import __version__
+    except ImportError:
+        __version__ = "1.3.0" # Fallback
+    print(f"Welcome to MitreHunter v{__version__}")
     print("="*50)
     print("This script will set up the environment and launch the tool.\n")
 
